@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ryans Caddy</title>
+  <style>
+    :root {
+      --wheel-size: 540px;
+      --pointer-size: 38px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      background: url("golf_gameshow_bg.png") center/cover no-repeat, #1e3d59;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  width: 100%;
+  padding: 1rem;
+}
+    #wheel-container {
+  position: relative;
+  width: 90vw;
+  max-width: var(--wheel-size);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+    #wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+    #pointer {
+      position: absolute;
+      top: -18px;
+      left: calc(50% - var(--pointer-size)/2);
+      width: var(--pointer-size);
+      height: var(--pointer-size);
+      background: #e63946;
+      clip-path: polygon(50% 0,0 100%,100% 100%);
+      filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));
+    }
+    #spinBtn {
+  margin-top: 1.5rem;
+  padding: 0.95rem 2.4rem;
+  font-size: 1.25rem;
+  border: none;
+  border-radius: 10px;
+  background: #457b9d;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s, background 0.2s;
+  user-select: none;
+  font-family: inherit;
+  align-self: center;
+}
+    #spinBtn:active { transform: scale(0.95); }
+    .glow {
+      animation: pulse 0.7s infinite alternate ease-in-out;
+      box-shadow: 0 0 12px 6px rgba(255,200,0,0.8);
+      background: #ffb703 !important;
+      color: #000;
+    }
+    @keyframes pulse { from{box-shadow:0 0 4px 2px rgba(255,200,0,0.4);} to{box-shadow:0 0 18px 10px rgba(255,200,0,1);} }
+    .star {
+  position: fixed;
+  pointer-events: none;
+  width: 140px; height: 140px; transform-origin: center;
+  background: gold;
+  clip-path: polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+  animation: burst 1600ms ease-out forwards;
+  z-index: 9999;
+}
+    @keyframes burst { to { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity:0;} }
+
+    /* ------- custom popup ------- */
+    #resultBox {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #ffeb3b, #4caf50);
+      border: 4px solid #222;
+      padding: 3rem 4rem;
+      border-radius: 24px;
+      font-size: 2.8rem;
+      font-family: system-ui, sans-serif;
+      color: #111;
+      box-shadow: 0 0 25px rgba(0,0,0,0.6);
+      z-index: 10000;
+      display: none;
+      text-align: center;
+      animation: flashGlow 0.25s step-start infinite alternate, fadeIn 0.4s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -60%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+@keyframes flashGlow {
+  from { box-shadow: 0 0 12px #ffeb3b; }
+  to   { box-shadow: 0 0 24px #4caf50; }
+} to { opacity: 1; transform: translate(-50%, -50%); } }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="wheel-container">
+      <canvas id="wheel" width="540" height="540"></canvas>
+      <div id="pointer"></div>
+      <button id="spinBtn">Hold to Spin</button>
+    </div>
+  </div>
+  <div id="resultBox"></div>
+<script>
+(() => {
+  const phrases = [
+    'Grip it and rip it!', 'Namaste all day', 'Driving Ms. Daisy',
+    'Use ball hidden in sleeve', 'Firewall',
+    'Toilet in pants', 'Another Lance!',
+    'Drink Whiskey', 'Bet life savings',
+    'Driver – trust me', 'LOOK OUT BEHIND YOU!',
+    'What would Spock do?'
+  ];
+  const colors = ['#f94144','#f3722c','#f8961e','#f9844a','#f9c74f','#90be6d','#43aa8b','#4d908e','#577590','#277da1','#9b5de5','#ff006e'];
+  const canvas = document.getElementById('wheel');
+  const ctx = canvas.getContext('2d');
+  const spinBtn = document.getElementById('spinBtn');
+  const resultBox = document.getElementById('resultBox');
+  const radius = canvas.width / 2;
+  const segment = 2 * Math.PI / phrases.length;
+  let rotation = 0, angularVelocity = 0, spinning = false;
+  const maxSpeed = 0.45, accel = 0.012;
+
+  function drawSegmentText(text, i) {
+    ctx.save();
+    ctx.rotate(i * segment + segment / 2);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    const rPos = radius * 0.55;
+    let size = 24;
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    const limit = radius * 0.85;
+    if (ctx.measureText(text).width > limit) {
+      size = Math.max(14, limit / ctx.measureText(text).width * size);
+      ctx.font = `bold ${size}px system-ui, sans-serif`;
+    }
+    ctx.translate(rPos, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  function drawWheel() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.save();
+    ctx.translate(radius, radius);
+    ctx.rotate(rotation);
+    ctx.lineWidth = 4;
+    for (let i = 0; i < phrases.length; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0,0,radius,i*segment,(i+1)*segment);
+      ctx.closePath();
+      ctx.fillStyle = colors[i%colors.length];
+      ctx.fill();
+      ctx.stroke();
+      drawSegmentText(phrases[i], i);
+    }
+    ctx.restore();
+  }
+
+  let confettiInterval;
+  function spawnStar() {
+    const star = document.createElement('div');
+    star.className = 'star';
+    const {x,y} = spinBtn.getBoundingClientRect();
+    const cx = x + spinBtn.offsetWidth/2;
+    const cy = y + spinBtn.offsetHeight/2;
+    star.style.left = `${cx-4}px`;
+    star.style.top = `${cy-4}px`;
+    const angle = Math.random()*2*Math.PI;
+    const dist = 400 + Math.random()*300;
+    star.style.setProperty('--dx', `${Math.cos(angle)*dist}px`);
+    star.style.setProperty('--dy', `${Math.sin(angle)*dist}px`);
+    document.body.appendChild(star);
+    setTimeout(()=>star.remove(),700);
+  }
+
+  function announceResult() {
+    const pointerAngle = (3*Math.PI/2 - rotation + 2*Math.PI) % (2*Math.PI);
+    const idx = Math.floor(pointerAngle / segment);
+    resultBox.textContent = phrases[idx];
+    resultBox.style.display = 'block';
+    setTimeout(() => { resultBox.style.display = 'none'; }, 3200);
+  }
+
+  function animate() {
+    if (spinning && angularVelocity < maxSpeed) angularVelocity += accel;
+    if (angularVelocity > 0) rotation = (rotation + angularVelocity) % (2*Math.PI);
+    if (!spinning && angularVelocity > 0) {
+      angularVelocity *= 0.985;
+      if (angularVelocity < 0.0004) {
+        angularVelocity = 0;
+        announceResult();
+      }
+    }
+    drawWheel();
+    requestAnimationFrame(animate);
+  }
+
+  const press = () => {
+    spinning = true;
+    spinBtn.classList.add('glow');
+    confettiInterval = setInterval(spawnStar, 90);
+  };
+  const release = () => {
+    spinning = false;
+    spinBtn.classList.remove('glow');
+    clearInterval(confettiInterval);
+    if (angularVelocity === 0) angularVelocity = 0.25;
+  };
+
+  spinBtn.addEventListener('mousedown', press);
+  window.addEventListener('mouseup', release);
+  spinBtn.addEventListener('mouseleave', () => { if (spinning) release(); });
+  spinBtn.addEventListener('touchstart', e => { e.preventDefault(); press(); }, { passive: false });
+  spinBtn.addEventListener('touchend',   e => { e.preventDefault(); release(); });
+  spinBtn.addEventListener('touchcancel',e => { e.preventDefault(); release(); });
+
+  drawWheel();
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
